@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 400px;
+      min-height: 300px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      margin: 0;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    h1 {
+      font-size: 22px;
+      margin: 0 0 10px 0;
+      font-weight: 600;
+    }
+    
+    .subtitle {
+      opacity: 0.8;
+      font-size: 14px;
+    }
+    
+    .scan-btn {
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+      width: 100%;
+      margin-bottom: 20px;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    
+    .scan-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+    
+    .scan-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .results {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 15px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .contact-group {
+      margin-bottom: 15px;
+    }
+    
+    .contact-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .contact-label {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 8px;
+      opacity: 0.9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .contact-items {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .contact-item {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      word-break: break-all;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .contact-item:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+    
+    .no-results {
+      text-align: center;
+      opacity: 0.7;
+      font-style: italic;
+      padding: 20px;
+    }
+    
+    .loading {
+      text-align: center;
+      opacity: 0.8;
+      padding: 20px;
+    }
+    
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 10px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .copy-notification {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+    
+    .copy-notification.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📞 Contact Scraper</h1>
+    <div class="subtitle">Extract contact details from this page</div>
+  </div>
+  
+  <button id="scanBtn" class="scan-btn">
+    🔍 Scan Page
+  </button>
+  
+  <div id="results" class="results" style="display: none;">
+    <div id="loading" class="loading">
+      <span class="spinner"></span>
+      Scanning page...
+    </div>
+    <div id="contactResults"></div>
+  </div>
+  
+  <div id="copyNotification" class="copy-notification">
+    Copied to clipboard!
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const scanBtn = document.getElementById('scanBtn');
+      const results = document.getElementById('results');
+      const loading = document.getElementById('loading');
+      const contactResults = document.getElementById('contactResults');
+      const copyNotification = document.getElementById('copyNotification');
+      
+      scanBtn.addEventListener('click', async function() {
+        scanBtn.disabled = true;
+        scanBtn.textContent = '🔄 Scanning...';
+        results.style.display = 'block';
+        loading.style.display = 'block';
+        contactResults.innerHTML = '';
+        
+        try {
+          // Get the active tab
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          
+          // Execute the scraping script
+          const [result] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            function: scrapeContacts
+          });
+          
+          displayResults(result.result);
+        } catch (error) {
+          console.error('Error:', error);
+          contactResults.innerHTML = '<div class="no-results">Error scanning page. Please try again.</div>';
+        } finally {
+          loading.style.display = 'none';
+          scanBtn.disabled = false;
+          scanBtn.textContent = '🔍 Scan Page';
+        }
+      });
+      
+      function displayResults(contacts) {
+        if (!contacts || (contacts.emails.length === 0 && contacts.phones.length === 0 && contacts.addresses.length === 0)) {
+          contactResults.innerHTML = '<div class="no-results">No contact details found on this page.</div>';
+          return;
+        }
+        
+        let html = '';
+        
+        if (contacts.emails.length > 0) {
+          html += `
+            <div class="contact-group">
+              <div class="contact-label">📧 Email Addresses (${contacts.emails.length})</div>
+              <div class="contact-items">
+                ${contacts.emails.map(email => `<div class="contact-item" onclick="copyToClipboard('${email}')">${email}</div>`).join('')}
+              </div>
+            </div>
+          `;
+        }
+        
+        if (contacts.phones.length > 0) {
+          html += `
+            <div class="contact-group">
+              <div class="contact-label">📱 Phone Numbers (${contacts.phones.length})</div>
+              <div class="contact-items">
+                ${contacts.phones.map(phone => `<div class="contact-item" onclick="copyToClipboard('${phone}')">${phone}</div>`).join('')}
+              </div>
+            </div>
+          `;
+        }
+        
+        if (contacts.addresses.length > 0) {
+          html += `
+            <div class="contact-group">
+              <div class="contact-label">📍 Addresses (${contacts.addresses.length})</div>
+              <div class="contact-items">
+                ${contacts.addresses.map(addr => `<div class="contact-item" onclick="copyToClipboard('${addr.replace(/'/g, '\\\'')}')">${addr}</div>`).join('')}
+              </div>
+            </div>
+          `;
+        }
+        
+        contactResults.innerHTML = html;
+      }
+      
+      // Make copyToClipboard available globally
+      window.copyToClipboard = function(text) {
+        navigator.clipboard.writeText(text).then(() => {
+          copyNotification.classList.add('show');
+          setTimeout(() => {
+            copyNotification.classList.remove('show');
+          }, 2000);
+        }).catch(err => {
+          console.error('Failed to copy: ', err);
+        });
+      };
+    });
+    
+    // Function that will be injected into the page
+    function scrapeContacts() {
+      const emails = new Set();
+      const phones = new Set();
+      const addresses = new Set();
+      
+      // Get all text content from the page
+      const textContent = document.body.innerText || document.body.textContent || '';
+      
+      // Email regex patterns
+      const emailPatterns = [
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+        /\b[A-Za-z0-9._%+-]+\s*\[at\]\s*[A-Za-z0-9.-]+\s*\[dot\]\s*[A-Z|a-z]{2,}\b/g
+      ];
+      
+      // Phone regex patterns
+      const phonePatterns = [
+        /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/g,
+        /(\+?[1-9]\d{0,3}[-.\s]?)?\(?([0-9]{2,4})\)?[-.\s]?([0-9]{3,4})[-.\s]?([0-9]{3,4})/g,
+        /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g
+      ];
+      
+      // Extract emails
+      emailPatterns.forEach(pattern => {
+        const matches = textContent.match(pattern);
+        if (matches) {
+          matches.forEach(email => {
+            const cleanEmail = email.replace(/\s*\[at\]\s*/g, '@').replace(/\s*\[dot\]\s*/g, '.');
+            if (cleanEmail.includes('@') && cleanEmail.includes('.')) {
+              emails.add(cleanEmail.toLowerCase());
+            }
+          });
+        }
+      });
+      
+      // Extract phone numbers
+      phonePatterns.forEach(pattern => {
+        const matches = textContent.match(pattern);
+        if (matches) {
+          matches.forEach(phone => {
+            const cleanPhone = phone.replace(/[^\d+]/g, '');
+            if (cleanPhone.length >= 10) {
+              phones.add(phone.trim());
+            }
+          });
+        }
+      });
+      
+      // Look for address patterns (basic)
+      const addressKeywords = ['address', 'location', 'office', 'headquarters', 'street', 'avenue', 'blvd', 'road', 'suite'];
+      const lines = textContent.split('\n');
+      
+      lines.forEach(line => {
+        const lowerLine = line.toLowerCase();
+        if (addressKeywords.some(keyword => lowerLine.includes(keyword))) {
+          if (line.length > 20 && line.length < 150) {
+            const hasNumber = /\d+/.test(line);
+            const hasStreetWords = /(street|st|avenue|ave|blvd|boulevard|road|rd|drive|dr|lane|ln|court|ct|suite|ste)/i.test(line);
+            if (hasNumber && hasStreetWords) {
+              addresses.add(line.trim());
+            }
+          }
+        }
+      });
+      
+      // Also check meta tags and structured data
+      const metaTags = document.querySelectorAll('meta[property*="contact"], meta[name*="contact"], meta[content*="@"]');
+      metaTags.forEach(meta => {
+        const content = meta.getAttribute('content');
+        if (content && content.includes('@')) {
+          const emailMatch = content.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
+          if (emailMatch) {
+            emails.add(emailMatch[0].toLowerCase());
+          }
+        }
+      });
+      
+      // Check for mailto links
+      const mailtoLinks = document.querySelectorAll('a[href^="mailto:"]');
+      mailtoLinks.forEach(link => {
+        const email = link.href.replace('mailto:', '').split('?')[0];
+        if (email.includes('@')) {
+          emails.add(email.toLowerCase());
+        }
+      });
+      
+      // Check for tel links
+      const telLinks = document.querySelectorAll('a[href^="tel:"]');
+      telLinks.forEach(link => {
+        const phone = link.href.replace('tel:', '');
+        if (phone.length >= 10) {
+          phones.add(phone);
+        }
+      });
+      
+      return {
+        emails: Array.from(emails),
+        phones: Array.from(phones),
+        addresses: Array.from(addresses)
+      };
+    }
+  </script>
+</body>
+</html>
