@@ -5,7 +5,8 @@
   "description": "Extract contact information from web pages",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "action": {
     "default_popup": "popup.html",
